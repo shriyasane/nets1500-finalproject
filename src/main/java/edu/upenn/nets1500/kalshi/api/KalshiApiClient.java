@@ -1,5 +1,7 @@
 package edu.upenn.nets1500.kalshi.api;
 
-public interface KalshiApiClient {
-}
+import java.io.IOException;
 
+public interface KalshiApiClient {
+    String getMarkets(int limit) throws IOException, InterruptedException;
+}
