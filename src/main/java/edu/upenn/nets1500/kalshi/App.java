@@ -37,6 +37,7 @@ public final class App {
                     graph.marketCount(),
                     graph.edgeCount());
             printNearestNeighborDemo(graph, markets.get(0).ticker(), 3);
+            printTraversalDemo(graph, markets.get(0).ticker());
             printNeighborPreview(graph);
         } catch (IOException e) {
             System.err.println("Failed to fetch Kalshi markets: " + e.getMessage());
@@ -62,6 +63,23 @@ public final class App {
             printMarketDetails(neighbor.market(), "  ");
             System.out.printf("  score: %.2f%n", neighbor.similarityScore());
         }
+    }
+
+    private static void printTraversalDemo(MarketGraph graph, String ticker) {
+        Market startMarket = graph.market(ticker)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + ticker));
+
+        System.out.println();
+        System.out.println("Traversal demo from:");
+        printMarketDetails(startMarket, "");
+
+        List<Market> breadthFirst = graph.breadthFirstTraversal(ticker);
+        System.out.println("BFS order:");
+        printTraversalOrder(breadthFirst);
+
+        List<Market> depthFirst = graph.depthFirstTraversal(ticker);
+        System.out.println("DFS order:");
+        printTraversalOrder(depthFirst);
     }
 
     private static void printNeighborPreview(MarketGraph graph) {
@@ -90,6 +108,13 @@ public final class App {
         System.out.println(indent + buildShortTitle(market));
         System.out.println(indent + "full title: " + market.title());
         System.out.println(indent + "ticker: " + market.ticker());
+    }
+
+    private static void printTraversalOrder(List<Market> traversal) {
+        for (int i = 0; i < traversal.size(); i++) {
+            Market market = traversal.get(i);
+            System.out.printf("  %d. %s (%s)%n", i + 1, buildShortTitle(market), market.ticker());
+        }
     }
 
     private static String buildShortTitle(Market market) {

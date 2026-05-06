@@ -3,8 +3,11 @@ package edu.upenn.nets1500.kalshi.graph;
 import edu.upenn.nets1500.kalshi.model.Market;
 import edu.upenn.nets1500.kalshi.model.MarketEdge;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -76,7 +79,11 @@ public class MarketGraph {
     }
 
     public List<Neighbor> nearestNeighborsOf(String ticker) {
-        return nearestNeighborsOf(ticker, degreeOf(ticker));
+        int degree = degreeOf(ticker);
+        if (degree == 0) {
+            return List.of();
+        }
+        return nearestNeighborsOf(ticker, degree);
     }
 
     public List<Neighbor> nearestNeighborsOf(String ticker, int limit) {
@@ -91,6 +98,61 @@ public class MarketGraph {
                 .limit(Math.min(limit, degreeOf(market.ticker())))
                 .map(edge -> toNeighbor(market.ticker(), edge))
                 .toList();
+    }
+
+    public List<Market> breadthFirstTraversal(String startTicker) {
+        Market startMarket = market(startTicker)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + startTicker));
+
+        List<Market> traversalOrder = new ArrayList<>();
+        Deque<String> queue = new ArrayDeque<>();
+        Set<String> visitedTickers = new HashSet<>();
+
+        queue.addLast(startMarket.ticker());
+        visitedTickers.add(startMarket.ticker());
+
+        while (!queue.isEmpty()) {
+            String currentTicker = queue.removeFirst();
+            traversalOrder.add(requiredMarket(currentTicker));
+
+            for (String neighborTicker : neighborTickersInTraversalOrder(currentTicker)) {
+                if (visitedTickers.add(neighborTicker)) {
+                    queue.addLast(neighborTicker);
+                }
+            }
+        }
+
+        return List.copyOf(traversalOrder);
+    }
+
+    public List<Market> depthFirstTraversal(String startTicker) {
+        Market startMarket = market(startTicker)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + startTicker));
+
+        List<Market> traversalOrder = new ArrayList<>();
+        Deque<String> stack = new ArrayDeque<>();
+        Set<String> visitedTickers = new HashSet<>();
+
+        stack.addLast(startMarket.ticker());
+
+        while (!stack.isEmpty()) {
+            String currentTicker = stack.removeLast();
+            if (!visitedTickers.add(currentTicker)) {
+                continue;
+            }
+
+            traversalOrder.add(requiredMarket(currentTicker));
+
+            List<String> neighborTickers = neighborTickersInTraversalOrder(currentTicker);
+            for (int i = neighborTickers.size() - 1; i >= 0; i--) {
+                String neighborTicker = neighborTickers.get(i);
+                if (!visitedTickers.contains(neighborTicker)) {
+                    stack.addLast(neighborTicker);
+                }
+            }
+        }
+
+        return List.copyOf(traversalOrder);
     }
 
     public int marketCount() {
@@ -120,10 +182,22 @@ public class MarketGraph {
         throw new IllegalArgumentException("Ticker " + ticker + " is not part of the provided edge");
     }
 
+    private List<String> neighborTickersInTraversalOrder(String ticker) {
+        List<String> neighborTickers = new ArrayList<>();
+        for (MarketEdge edge : neighborsOf(ticker)) {
+            neighborTickers.add(otherEndpoint(ticker, edge));
+        }
+        return neighborTickers;
+    }
+
+    private Market requiredMarket(String ticker) {
+        return market(ticker)
+                .orElseThrow(() -> new IllegalStateException("Missing market for ticker: " + ticker));
+    }
+
     private Neighbor toNeighbor(String ticker, MarketEdge edge) {
         String neighborTicker = otherEndpoint(ticker, edge);
-        Market neighborMarket = market(neighborTicker)
-                .orElseThrow(() -> new IllegalStateException("Missing market for ticker: " + neighborTicker));
+        Market neighborMarket = requiredMarket(neighborTicker);
         return new Neighbor(neighborMarket, edge.similarityScore());
     }
 

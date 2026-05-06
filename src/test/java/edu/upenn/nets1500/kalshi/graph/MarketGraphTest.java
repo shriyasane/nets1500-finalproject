@@ -93,6 +93,57 @@ class MarketGraphTest {
         assertThrows(IllegalArgumentException.class, () -> graph.nearestNeighborsOf("FED-MAY", 0));
     }
 
+    @Test
+    void breadthFirstTraversalVisitsMarketsLevelByLevel() {
+        Market start = market("START", "Starting market");
+        Market branchA = market("A", "Branch A");
+        Market branchB = market("B", "Branch B");
+        Market branchC = market("C", "Branch C");
+        Market tail = market("TAIL", "Tail market");
+
+        MarketGraph graph = new MarketGraph(
+                List.of(start, branchA, branchB, branchC, tail),
+                List.of(
+                        new MarketEdge("START", "A", 0.9),
+                        new MarketEdge("START", "B", 0.8),
+                        new MarketEdge("A", "C", 0.7),
+                        new MarketEdge("B", "TAIL", 0.6)));
+
+        List<Market> traversal = graph.breadthFirstTraversal("START");
+
+        assertEquals(List.of("START", "A", "B", "C", "TAIL"), tickers(traversal));
+    }
+
+    @Test
+    void depthFirstTraversalFollowsOneBranchBeforeBacktracking() {
+        Market start = market("START", "Starting market");
+        Market branchA = market("A", "Branch A");
+        Market branchB = market("B", "Branch B");
+        Market branchC = market("C", "Branch C");
+        Market tail = market("TAIL", "Tail market");
+
+        MarketGraph graph = new MarketGraph(
+                List.of(start, branchA, branchB, branchC, tail),
+                List.of(
+                        new MarketEdge("START", "A", 0.9),
+                        new MarketEdge("START", "B", 0.8),
+                        new MarketEdge("A", "C", 0.7),
+                        new MarketEdge("B", "TAIL", 0.6)));
+
+        List<Market> traversal = graph.depthFirstTraversal("START");
+
+        assertEquals(List.of("START", "A", "C", "B", "TAIL"), tickers(traversal));
+    }
+
+    @Test
+    void traversalRejectsUnknownStartTicker() {
+        Market fedMay = market("FED-MAY", "Will the Fed cut rates in May?");
+        MarketGraph graph = new MarketGraph(List.of(fedMay), List.of());
+
+        assertThrows(IllegalArgumentException.class, () -> graph.breadthFirstTraversal("UNKNOWN"));
+        assertThrows(IllegalArgumentException.class, () -> graph.depthFirstTraversal("UNKNOWN"));
+    }
+
     private static Market market(String ticker, String title) {
         return new Market(
                 ticker,
@@ -109,5 +160,9 @@ class MarketGraphTest {
                 null,
                 null,
                 null);
+    }
+
+    private static List<String> tickers(List<Market> markets) {
+        return markets.stream().map(Market::ticker).toList();
     }
 }
