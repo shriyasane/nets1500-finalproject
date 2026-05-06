@@ -71,6 +71,28 @@ public class MarketGraph {
         return Collections.unmodifiableSet(neighborTickers);
     }
 
+    public Optional<Neighbor> nearestNeighborOf(String ticker) {
+        return nearestNeighborsOf(ticker, 1).stream().findFirst();
+    }
+
+    public List<Neighbor> nearestNeighborsOf(String ticker) {
+        return nearestNeighborsOf(ticker, degreeOf(ticker));
+    }
+
+    public List<Neighbor> nearestNeighborsOf(String ticker, int limit) {
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit must be positive");
+        }
+
+        Market market = market(ticker)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + ticker));
+
+        return neighborsOf(market.ticker()).stream()
+                .limit(Math.min(limit, degreeOf(market.ticker())))
+                .map(edge -> toNeighbor(market.ticker(), edge))
+                .toList();
+    }
+
     public int marketCount() {
         return marketsByTicker.size();
     }
@@ -96,5 +118,23 @@ public class MarketGraph {
             return edge.sourceTicker();
         }
         throw new IllegalArgumentException("Ticker " + ticker + " is not part of the provided edge");
+    }
+
+    private Neighbor toNeighbor(String ticker, MarketEdge edge) {
+        String neighborTicker = otherEndpoint(ticker, edge);
+        Market neighborMarket = market(neighborTicker)
+                .orElseThrow(() -> new IllegalStateException("Missing market for ticker: " + neighborTicker));
+        return new Neighbor(neighborMarket, edge.similarityScore());
+    }
+
+    public record Neighbor(Market market, double similarityScore) {
+        public Neighbor {
+            if (market == null) {
+                throw new IllegalArgumentException("market must not be null");
+            }
+            if (similarityScore < 0.0 || similarityScore > 1.0) {
+                throw new IllegalArgumentException("similarityScore must be between 0.0 and 1.0");
+            }
+        }
     }
 }

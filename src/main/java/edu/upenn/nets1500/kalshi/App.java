@@ -36,6 +36,7 @@ public final class App {
                     "Fetched %d markets and built a graph with %d edges.%n",
                     graph.marketCount(),
                     graph.edgeCount());
+            printNearestNeighborDemo(graph, markets.get(0).ticker(), 3);
             printNeighborPreview(graph);
         } catch (IOException e) {
             System.err.println("Failed to fetch Kalshi markets: " + e.getMessage());
@@ -45,28 +46,141 @@ public final class App {
         }
     }
 
+    private static void printNearestNeighborDemo(MarketGraph graph, String ticker, int limit) {
+        Market market = graph.market(ticker)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + ticker));
+        System.out.printf("Nearest neighbors for %s:%n", formatMarketLabel(market));
+        List<MarketGraph.Neighbor> neighbors = graph.nearestNeighborsOf(ticker, limit);
+        if (neighbors.isEmpty()) {
+            System.out.println("No similar neighbors above threshold.");
+            return;
+        }
+
+        for (MarketGraph.Neighbor neighbor : neighbors) {
+            System.out.printf(
+                    "%s -> %.2f%n",
+                    formatMarketLabel(neighbor.market()),
+                    neighbor.similarityScore());
+        }
+    }
+
     private static void printNeighborPreview(MarketGraph graph) {
         System.out.println("Top neighbors by market:");
         for (Market market : graph.markets()) {
+            System.out.println();
+            System.out.println(formatMarketLabel(market));
             List<MarketEdge> neighbors = graph.neighborsOf(market.ticker());
             if (neighbors.isEmpty()) {
-                System.out.printf("%s -> no similar neighbors above threshold%n", market.ticker());
+                System.out.println("  No similar neighbors above threshold.");
                 continue;
             }
 
-            StringBuilder neighborSummary = new StringBuilder();
             for (int i = 0; i < neighbors.size(); i++) {
                 MarketEdge edge = neighbors.get(i);
-                if (i > 0) {
-                    neighborSummary.append(", ");
-                }
-                neighborSummary.append(graph.otherEndpoint(market.ticker(), edge))
-                        .append(" (")
-                        .append(String.format("%.2f", edge.similarityScore()))
-                        .append(")");
+                Market neighbor = graph.market(graph.otherEndpoint(market.ticker(), edge))
+                        .orElseThrow(() -> new IllegalStateException("Missing market for graph edge"));
+                System.out.printf(
+                        "  %d. %s%n",
+                        i + 1,
+                        formatMarketLabel(neighbor));
+                System.out.printf(
+                        "     score: %.2f%n",
+                        edge.similarityScore());
             }
-
-            System.out.printf("%s -> %s%n", market.ticker(), neighborSummary);
         }
+    }
+
+    private static String formatMarketLabel(Market market) {
+        return "%s | %s [%s]".formatted(
+                buildShortTitle(market),
+                market.title(),
+                abbreviateTicker(market.ticker()));
+    }
+
+    private static String buildShortTitle(Market market) {
+        String title = market.title();
+        String[] clauses = title.split("\\s*,\\s*");
+
+        if (looksLikeLegList(clauses)) {
+            return buildParlayLabel(clauses);
+        }
+
+        if (clauses.length == 1) {
+            return truncate(clauses[0], 48);
+        }
+
+        int clauseLimit = Math.min(3, clauses.length);
+        StringBuilder summary = new StringBuilder();
+        for (int i = 0; i < clauseLimit; i++) {
+            if (i > 0) {
+                summary.append(", ");
+            }
+            summary.append(clauses[i].trim());
+        }
+
+        if (clauses.length > clauseLimit) {
+            summary.append(", ...");
+        }
+
+        return truncate(summary.toString(), 64);
+    }
+
+    private static boolean looksLikeLegList(String[] clauses) {
+        if (clauses.length < 2) {
+            return false;
+        }
+
+        int prefixedClauses = 0;
+        for (String clause : clauses) {
+            String normalizedClause = clause.trim().toLowerCase();
+            if (normalizedClause.startsWith("yes ") || normalizedClause.startsWith("no ")) {
+                prefixedClauses++;
+            }
+        }
+
+        return prefixedClauses >= Math.max(2, clauses.length / 2);
+    }
+
+    private static String buildParlayLabel(String[] clauses) {
+        int clauseLimit = Math.min(3, clauses.length);
+        StringBuilder summary = new StringBuilder("All-leg parlay: ");
+
+        for (int i = 0; i < clauseLimit; i++) {
+            if (i > 0) {
+                summary.append("; ");
+            }
+            summary.append(cleanClause(clauses[i]));
+        }
+
+        if (clauses.length > clauseLimit) {
+            summary.append(" (+").append(clauses.length - clauseLimit).append(" more)");
+        }
+
+        return truncate(summary.toString(), 72);
+    }
+
+    private static String cleanClause(String clause) {
+        String trimmedClause = clause.trim();
+        if (trimmedClause.regionMatches(true, 0, "yes ", 0, 4)) {
+            return trimmedClause.substring(4).trim();
+        }
+        if (trimmedClause.regionMatches(true, 0, "no ", 0, 3)) {
+            return "not " + trimmedClause.substring(3).trim();
+        }
+        return trimmedClause;
+    }
+
+    private static String abbreviateTicker(String ticker) {
+        if (ticker.length() <= 18) {
+            return ticker;
+        }
+        return ticker.substring(0, 10) + "..." + ticker.substring(ticker.length() - 5);
+    }
+
+    private static String truncate(String text, int maxLength) {
+        if (text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, Math.max(0, maxLength - 3)).trim() + "...";
     }
 }
