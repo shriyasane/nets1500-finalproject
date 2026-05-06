@@ -1,11 +1,14 @@
 package edu.upenn.nets1500.kalshi.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import edu.upenn.nets1500.kalshi.model.Market;
 import edu.upenn.nets1500.kalshi.model.MarketStatus;
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class KalshiMarketFetcherTest {
@@ -66,16 +69,102 @@ class KalshiMarketFetcherTest {
         assertEquals(MarketStatus.SETTLED, second.status());
     }
 
-    private static final class FakeKalshiApiClient implements KalshiApiClient {
-        private final String payload;
+    @Test
+    void fetchesDiversifiedMarketsAcrossSeriesCategories() throws IOException, InterruptedException {
+        String seriesPayload = """
+                {
+                  "series": [
+                    { "ticker": "SPORTS-SERIES", "category": "Sports" },
+                    { "ticker": "ENT-SERIES", "category": "Entertainment" },
+                    { "ticker": "POL-SERIES", "category": "Politics" }
+                  ]
+                }
+                """;
 
-        private FakeKalshiApiClient(String payload) {
-            this.payload = payload;
+        Map<String, String> marketsBySeries = new LinkedHashMap<>();
+        marketsBySeries.put("SPORTS-SERIES", marketsPayload(
+                marketJson("SPORTS-1", "Will the Knicks win tonight?", "SPORTS-EVENT-1"),
+                marketJson("SPORTS-2", "Will the Mets win tonight?", "SPORTS-EVENT-2")));
+        marketsBySeries.put("ENT-SERIES", marketsPayload(
+                marketJson("ENT-1", "Will this movie top the box office?", "ENT-EVENT-1"),
+                marketJson("ENT-2", "Will this song hit number one?", "ENT-EVENT-2")));
+        marketsBySeries.put("POL-SERIES", marketsPayload(
+                marketJson("POL-1", "Will candidate X win the debate?", "POL-EVENT-1"),
+                marketJson("POL-2", "Will the bill pass the Senate?", "POL-EVENT-2")));
+
+        KalshiApiClient fakeClient = new FakeKalshiApiClient(marketsPayload(), seriesPayload, marketsBySeries);
+        KalshiMarketFetcher fetcher = new KalshiMarketFetcher(fakeClient);
+
+        List<Market> markets = fetcher.fetchDiversifiedMarkets(5);
+
+        assertEquals(5, markets.size());
+        assertTrue(markets.stream().anyMatch(market -> market.ticker().startsWith("SPORTS-")));
+        assertTrue(markets.stream().anyMatch(market -> market.ticker().startsWith("ENT-")));
+        assertTrue(markets.stream().anyMatch(market -> market.ticker().startsWith("POL-")));
+    }
+
+    private static final class FakeKalshiApiClient implements KalshiApiClient {
+        private final String defaultMarketsPayload;
+        private final String seriesPayload;
+        private final Map<String, String> marketsBySeries;
+
+        private FakeKalshiApiClient(String defaultMarketsPayload) {
+            this(defaultMarketsPayload, "{\"series\":[]}", Map.of());
+        }
+
+        private FakeKalshiApiClient(
+                String defaultMarketsPayload,
+                String seriesPayload,
+                Map<String, String> marketsBySeries) {
+            this.defaultMarketsPayload = defaultMarketsPayload;
+            this.seriesPayload = seriesPayload;
+            this.marketsBySeries = marketsBySeries;
         }
 
         @Override
         public String getMarkets(int limit) {
-            return payload;
+            return defaultMarketsPayload;
         }
+
+        @Override
+        public String getMarkets(int limit, String seriesTicker, String status) {
+            return marketsBySeries.getOrDefault(seriesTicker, defaultMarketsPayload);
+        }
+
+        @Override
+        public String getSeries(String category) {
+            return seriesPayload;
+        }
+    }
+
+    private static String marketsPayload(String... marketObjects) {
+        return """
+                {
+                  "markets": [
+                """
+                + String.join(",", marketObjects)
+                + """
+                  ]
+                }
+                """;
+    }
+
+    private static String marketJson(String ticker, String title, String eventTicker) {
+        return """
+                {
+                  "ticker": "%s",
+                  "event_ticker": "%s",
+                  "status": "open",
+                  "open_time": null,
+                  "close_time": null,
+                  "expiration_time": null,
+                  "yes_ask_dollars": "0.4300",
+                  "no_ask_dollars": "0.5900",
+                  "last_price_dollars": "0.4400",
+                  "title": "%s",
+                  "subtitle": null,
+                  "rules_primary": null
+                }
+                """.formatted(ticker, eventTicker, title);
     }
 }

@@ -25,7 +25,7 @@ public final class App {
         GraphBuilder graphBuilder = new GraphBuilder(new TokenJaccardMarketSimilarityService());
 
         try {
-            List<Market> markets = fetcher.fetchMarkets(DEFAULT_FETCH_LIMIT);
+            List<Market> markets = fetcher.fetchDiversifiedMarkets(DEFAULT_FETCH_LIMIT);
             if (markets.isEmpty()) {
                 System.out.println("No markets returned from Kalshi.");
                 return;
@@ -49,7 +49,8 @@ public final class App {
     private static void printNearestNeighborDemo(MarketGraph graph, String ticker, int limit) {
         Market market = graph.market(ticker)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + ticker));
-        System.out.printf("Nearest neighbors for %s:%n", formatMarketLabel(market));
+        System.out.println("Nearest neighbors for:");
+        printMarketDetails(market, "");
         List<MarketGraph.Neighbor> neighbors = graph.nearestNeighborsOf(ticker, limit);
         if (neighbors.isEmpty()) {
             System.out.println("No similar neighbors above threshold.");
@@ -57,10 +58,9 @@ public final class App {
         }
 
         for (MarketGraph.Neighbor neighbor : neighbors) {
-            System.out.printf(
-                    "%s -> %.2f%n",
-                    formatMarketLabel(neighbor.market()),
-                    neighbor.similarityScore());
+            System.out.println();
+            printMarketDetails(neighbor.market(), "  ");
+            System.out.printf("  score: %.2f%n", neighbor.similarityScore());
         }
     }
 
@@ -68,7 +68,7 @@ public final class App {
         System.out.println("Top neighbors by market:");
         for (Market market : graph.markets()) {
             System.out.println();
-            System.out.println(formatMarketLabel(market));
+            printMarketDetails(market, "");
             List<MarketEdge> neighbors = graph.neighborsOf(market.ticker());
             if (neighbors.isEmpty()) {
                 System.out.println("  No similar neighbors above threshold.");
@@ -79,22 +79,17 @@ public final class App {
                 MarketEdge edge = neighbors.get(i);
                 Market neighbor = graph.market(graph.otherEndpoint(market.ticker(), edge))
                         .orElseThrow(() -> new IllegalStateException("Missing market for graph edge"));
-                System.out.printf(
-                        "  %d. %s%n",
-                        i + 1,
-                        formatMarketLabel(neighbor));
-                System.out.printf(
-                        "     score: %.2f%n",
-                        edge.similarityScore());
+                System.out.printf("  %d.%n", i + 1);
+                printMarketDetails(neighbor, "     ");
+                System.out.printf("     score: %.2f%n", edge.similarityScore());
             }
         }
     }
 
-    private static String formatMarketLabel(Market market) {
-        return "%s | %s [%s]".formatted(
-                buildShortTitle(market),
-                market.title(),
-                abbreviateTicker(market.ticker()));
+    private static void printMarketDetails(Market market, String indent) {
+        System.out.println(indent + buildShortTitle(market));
+        System.out.println(indent + "full title: " + market.title());
+        System.out.println(indent + "ticker: " + market.ticker());
     }
 
     private static String buildShortTitle(Market market) {
@@ -168,13 +163,6 @@ public final class App {
             return "not " + trimmedClause.substring(3).trim();
         }
         return trimmedClause;
-    }
-
-    private static String abbreviateTicker(String ticker) {
-        if (ticker.length() <= 18) {
-            return ticker;
-        }
-        return ticker.substring(0, 10) + "..." + ticker.substring(ticker.length() - 5);
     }
 
     private static String truncate(String text, int maxLength) {
