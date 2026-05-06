@@ -144,6 +144,106 @@ class MarketGraphTest {
         assertThrows(IllegalArgumentException.class, () -> graph.depthFirstTraversal("UNKNOWN"));
     }
 
+    @Test
+    void connectedComponentsGroupsMarketsIntoIsolatedClusters() {
+        Market a = market("A", "Market A");
+        Market b = market("B", "Market B");
+        Market c = market("C", "Market C");
+        Market d = market("D", "Market D");
+        Market e = market("E", "Market E");
+        Market isolated = market("ISO", "Isolated market");
+
+        MarketGraph graph = new MarketGraph(
+                List.of(a, b, c, d, e, isolated),
+                List.of(
+                        new MarketEdge("A", "B", 0.9),
+                        new MarketEdge("B", "C", 0.8),
+                        new MarketEdge("D", "E", 0.7)));
+
+        List<List<Market>> components = graph.connectedComponents();
+
+        assertEquals(3, components.size());
+        assertEquals(List.of("A", "B", "C"), tickers(components.get(0)));
+        assertEquals(List.of("D", "E"), tickers(components.get(1)));
+        assertEquals(List.of("ISO"), tickers(components.get(2)));
+    }
+
+    @Test
+    void degreeRankingSortsMarketsByDescendingNeighborCount() {
+        Market a = market("A", "Market A");
+        Market b = market("B", "Market B");
+        Market c = market("C", "Market C");
+        Market d = market("D", "Market D");
+
+        MarketGraph graph = new MarketGraph(
+                List.of(a, b, c, d),
+                List.of(
+                        new MarketEdge("A", "B", 0.9),
+                        new MarketEdge("A", "C", 0.8),
+                        new MarketEdge("B", "C", 0.7)));
+
+        List<MarketGraph.DegreeRankingEntry> ranking = graph.degreeRanking();
+
+        assertEquals(List.of("A", "B", "C", "D"),
+                ranking.stream().map(entry -> entry.market().ticker()).toList());
+        assertEquals(List.of(2, 2, 2, 0),
+                ranking.stream().map(MarketGraph.DegreeRankingEntry::degree).toList());
+    }
+
+    @Test
+    void closenessCentralityRankingPrioritizesMarketsWithShorterAverageDistances() {
+        Market a = market("A", "Market A");
+        Market b = market("B", "Market B");
+        Market c = market("C", "Market C");
+        Market d = market("D", "Market D");
+
+        MarketGraph graph = new MarketGraph(
+                List.of(a, b, c, d),
+                List.of(
+                        new MarketEdge("A", "B", 0.9),
+                        new MarketEdge("B", "C", 0.8),
+                        new MarketEdge("C", "D", 0.7)));
+
+        List<MarketGraph.ClosenessCentralityEntry> ranking = graph.closenessCentralityRanking();
+
+        assertEquals(List.of("B", "C", "A", "D"),
+                ranking.stream().map(entry -> entry.market().ticker()).toList());
+        assertEquals(List.of(0.75, 0.75, 0.5, 0.5),
+                ranking.stream().map(MarketGraph.ClosenessCentralityEntry::score).toList());
+    }
+
+    @Test
+    void shortestPathBetweenReturnsMarketsAlongMinimumHopPath() {
+        Market a = market("A", "Market A");
+        Market b = market("B", "Market B");
+        Market c = market("C", "Market C");
+        Market d = market("D", "Market D");
+
+        MarketGraph graph = new MarketGraph(
+                List.of(a, b, c, d),
+                List.of(
+                        new MarketEdge("A", "B", 0.9),
+                        new MarketEdge("B", "C", 0.8),
+                        new MarketEdge("C", "D", 0.7)));
+
+        List<Market> path = graph.shortestPathBetween("A", "D");
+
+        assertEquals(List.of("A", "B", "C", "D"), tickers(path));
+    }
+
+    @Test
+    void shortestPathBetweenReturnsEmptyWhenMarketsAreDisconnected() {
+        Market a = market("A", "Market A");
+        Market b = market("B", "Market B");
+        Market isolated = market("ISO", "Isolated market");
+
+        MarketGraph graph = new MarketGraph(
+                List.of(a, b, isolated),
+                List.of(new MarketEdge("A", "B", 0.9)));
+
+        assertTrue(graph.shortestPathBetween("A", "ISO").isEmpty());
+    }
+
     private static Market market(String ticker, String title) {
         return new Market(
                 ticker,

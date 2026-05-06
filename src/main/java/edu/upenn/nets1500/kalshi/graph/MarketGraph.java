@@ -8,12 +8,14 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Comparator;
 
 public class MarketGraph {
     private final Map<String, Market> marketsByTicker;
@@ -155,6 +157,91 @@ public class MarketGraph {
         return List.copyOf(traversalOrder);
     }
 
+    public List<List<Market>> connectedComponents() {
+        List<List<Market>> components = new ArrayList<>();
+        Set<String> visitedTickers = new HashSet<>();
+
+        for (Market market : marketsByTicker.values()) {
+            if (visitedTickers.contains(market.ticker())) {
+                continue;
+            }
+
+            List<Market> component = new ArrayList<>();
+            Deque<String> queue = new ArrayDeque<>();
+            queue.addLast(market.ticker());
+            visitedTickers.add(market.ticker());
+
+            while (!queue.isEmpty()) {
+                String currentTicker = queue.removeFirst();
+                component.add(requiredMarket(currentTicker));
+
+                for (String neighborTicker : neighborTickersInTraversalOrder(currentTicker)) {
+                    if (visitedTickers.add(neighborTicker)) {
+                        queue.addLast(neighborTicker);
+                    }
+                }
+            }
+
+            components.add(List.copyOf(component));
+        }
+
+        return List.copyOf(components);
+    }
+
+    public List<DegreeRankingEntry> degreeRanking() {
+        return marketsByTicker.values().stream()
+                .map(market -> new DegreeRankingEntry(market, degreeOf(market.ticker())))
+                .sorted(Comparator
+                        .comparingInt(DegreeRankingEntry::degree)
+                        .reversed()
+                        .thenComparing(entry -> entry.market().ticker()))
+                .toList();
+    }
+
+    public List<ClosenessCentralityEntry> closenessCentralityRanking() {
+        return marketsByTicker.values().stream()
+                .map(market -> new ClosenessCentralityEntry(market, closenessCentralityOf(market.ticker())))
+                .sorted(Comparator
+                        .comparingDouble(ClosenessCentralityEntry::score)
+                        .reversed()
+                        .thenComparing(entry -> entry.market().ticker()))
+                .toList();
+    }
+
+    public List<Market> shortestPathBetween(String startTicker, String endTicker) {
+        requiredMarket(startTicker);
+        requiredMarket(endTicker);
+
+        if (startTicker.equals(endTicker)) {
+            return List.of(requiredMarket(startTicker));
+        }
+
+        Map<String, String> previousTicker = new HashMap<>();
+        Set<String> visitedTickers = new HashSet<>();
+        Deque<String> queue = new ArrayDeque<>();
+
+        queue.addLast(startTicker);
+        visitedTickers.add(startTicker);
+
+        while (!queue.isEmpty()) {
+            String currentTicker = queue.removeFirst();
+
+            for (String neighborTicker : neighborTickersInTraversalOrder(currentTicker)) {
+                if (!visitedTickers.add(neighborTicker)) {
+                    continue;
+                }
+
+                previousTicker.put(neighborTicker, currentTicker);
+                if (neighborTicker.equals(endTicker)) {
+                    return reconstructPath(startTicker, endTicker, previousTicker);
+                }
+                queue.addLast(neighborTicker);
+            }
+        }
+
+        return List.of();
+    }
+
     public int marketCount() {
         return marketsByTicker.size();
     }
@@ -190,6 +277,63 @@ public class MarketGraph {
         return neighborTickers;
     }
 
+    private double closenessCentralityOf(String startTicker) {
+        Map<String, Integer> distances = shortestPathDistancesFrom(startTicker);
+        if (distances.size() <= 1) {
+            return 0.0;
+        }
+
+        int totalDistance = distances.values().stream()
+                .filter(distance -> distance > 0)
+                .mapToInt(Integer::intValue)
+                .sum();
+        if (totalDistance == 0) {
+            return 0.0;
+        }
+
+        int reachableMarkets = distances.size() - 1;
+        return (double) reachableMarkets / totalDistance;
+    }
+
+    private Map<String, Integer> shortestPathDistancesFrom(String startTicker) {
+        requiredMarket(startTicker);
+
+        Map<String, Integer> distances = new HashMap<>();
+        Deque<String> queue = new ArrayDeque<>();
+        distances.put(startTicker, 0);
+        queue.addLast(startTicker);
+
+        while (!queue.isEmpty()) {
+            String currentTicker = queue.removeFirst();
+            int currentDistance = distances.get(currentTicker);
+
+            for (String neighborTicker : neighborTickersInTraversalOrder(currentTicker)) {
+                if (distances.containsKey(neighborTicker)) {
+                    continue;
+                }
+                distances.put(neighborTicker, currentDistance + 1);
+                queue.addLast(neighborTicker);
+            }
+        }
+
+        return distances;
+    }
+
+    private List<Market> reconstructPath(String startTicker, String endTicker, Map<String, String> previousTicker) {
+        Deque<Market> path = new ArrayDeque<>();
+        String currentTicker = endTicker;
+
+        while (currentTicker != null) {
+            path.addFirst(requiredMarket(currentTicker));
+            if (currentTicker.equals(startTicker)) {
+                return List.copyOf(path);
+            }
+            currentTicker = previousTicker.get(currentTicker);
+        }
+
+        return List.of();
+    }
+
     private Market requiredMarket(String ticker) {
         return market(ticker)
                 .orElseThrow(() -> new IllegalStateException("Missing market for ticker: " + ticker));
@@ -208,6 +352,28 @@ public class MarketGraph {
             }
             if (similarityScore < 0.0 || similarityScore > 1.0) {
                 throw new IllegalArgumentException("similarityScore must be between 0.0 and 1.0");
+            }
+        }
+    }
+
+    public record DegreeRankingEntry(Market market, int degree) {
+        public DegreeRankingEntry {
+            if (market == null) {
+                throw new IllegalArgumentException("market must not be null");
+            }
+            if (degree < 0) {
+                throw new IllegalArgumentException("degree must not be negative");
+            }
+        }
+    }
+
+    public record ClosenessCentralityEntry(Market market, double score) {
+        public ClosenessCentralityEntry {
+            if (market == null) {
+                throw new IllegalArgumentException("market must not be null");
+            }
+            if (score < 0.0) {
+                throw new IllegalArgumentException("score must not be negative");
             }
         }
     }
