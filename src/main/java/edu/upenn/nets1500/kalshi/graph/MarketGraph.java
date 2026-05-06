@@ -2,6 +2,7 @@ package edu.upenn.nets1500.kalshi.graph;
 
 import edu.upenn.nets1500.kalshi.model.Market;
 import edu.upenn.nets1500.kalshi.model.MarketEdge;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Collection;
@@ -10,10 +11,10 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.Comparator;
 
@@ -27,6 +28,7 @@ public class MarketGraph {
         this.adjacencyByTicker = new LinkedHashMap<>();
         this.edges = new ArrayList<>();
 
+        // creates a graph object in adjacency list form by adding edge information to each market's assoc list
         for (Market market : markets) {
             marketsByTicker.put(market.ticker(), market);
             adjacencyByTicker.put(market.ticker(), new ArrayList<>());
@@ -42,12 +44,14 @@ public class MarketGraph {
             adjacencyByTicker.get(edge.targetTicker()).add(edge);
         }
 
+        // edges for each market are stored in decreasing similarity score order to make graph algos easier to implement
         this.edges.sort((left, right) -> Double.compare(right.similarityScore(), left.similarityScore()));
         for (List<MarketEdge> adjacency : adjacencyByTicker.values()) {
             adjacency.sort((left, right) -> Double.compare(right.similarityScore(), left.similarityScore()));
         }
     }
 
+    // getters
     public Collection<Market> markets() {
         return Collections.unmodifiableCollection(marketsByTicker.values());
     }
@@ -56,36 +60,19 @@ public class MarketGraph {
         return Collections.unmodifiableList(edges);
     }
 
+    // returns market object given "key"/ticker
     public Optional<Market> market(String ticker) {
         return Optional.ofNullable(marketsByTicker.get(ticker));
     }
 
+    // given the ticker of a market, returns a list of all edges to neighboring markets (i.e. those that have an 
+    // edge to current market)
     public List<MarketEdge> neighborsOf(String ticker) {
         List<MarketEdge> neighbors = adjacencyByTicker.get(ticker);
         if (neighbors == null) {
             throw new IllegalArgumentException("Unknown market ticker: " + ticker);
         }
         return Collections.unmodifiableList(neighbors);
-    }
-
-    public Set<String> neighborTickersOf(String ticker) {
-        Set<String> neighborTickers = new LinkedHashSet<>();
-        for (MarketEdge edge : neighborsOf(ticker)) {
-            neighborTickers.add(otherEndpoint(ticker, edge));
-        }
-        return Collections.unmodifiableSet(neighborTickers);
-    }
-
-    public Optional<Neighbor> nearestNeighborOf(String ticker) {
-        return nearestNeighborsOf(ticker, 1).stream().findFirst();
-    }
-
-    public List<Neighbor> nearestNeighborsOf(String ticker) {
-        int degree = degreeOf(ticker);
-        if (degree == 0) {
-            return List.of();
-        }
-        return nearestNeighborsOf(ticker, degree);
     }
 
     public List<Neighbor> nearestNeighborsOf(String ticker, int limit) {
@@ -97,11 +84,13 @@ public class MarketGraph {
                 .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + ticker));
 
         return neighborsOf(market.ticker()).stream()
-                .limit(Math.min(limit, degreeOf(market.ticker())))
+                .limit(Math.min(limit, neighborsOf(market.ticker()).size()))
                 .map(edge -> toNeighbor(market.ticker(), edge))
                 .toList();
     }
 
+    // Breadth-First Search from a given market. Adds neighboring markets to queue, explores neighbors in FIFO order,
+    // and pops off until queue empty
     public List<Market> breadthFirstTraversal(String startTicker) {
         Market startMarket = market(startTicker)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + startTicker));
@@ -127,6 +116,8 @@ public class MarketGraph {
         return List.copyOf(traversalOrder);
     }
 
+    // Depth-First Search from a given market. Adds neighboring markets to stack, explores neighbors in LIFO order,
+    // and pops off until queue empty
     public List<Market> depthFirstTraversal(String startTicker) {
         Market startMarket = market(startTicker)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + startTicker));
@@ -157,6 +148,8 @@ public class MarketGraph {
         return List.copyOf(traversalOrder);
     }
 
+    // Performs a pseudo algorithm that runs BFS multiple times until all markets have been reached (each BFS run
+    // results in 1 connected component). Returns a list of connected components of market nodes.
     public List<List<Market>> connectedComponents() {
         List<List<Market>> components = new ArrayList<>();
         Set<String> visitedTickers = new HashSet<>();
@@ -188,26 +181,18 @@ public class MarketGraph {
         return List.copyOf(components);
     }
 
-    public List<DegreeRankingEntry> degreeRanking() {
+    // Returns Market sorted by descending in-degree. First Market is most connected (highest degree).
+    public List<Market> degreeRanking() {
         return marketsByTicker.values().stream()
-                .map(market -> new DegreeRankingEntry(market, degreeOf(market.ticker())))
                 .sorted(Comparator
-                        .comparingInt(DegreeRankingEntry::degree)
+                        .comparingInt((Market market) -> neighborsOf(market.ticker()).size())
                         .reversed()
-                        .thenComparing(entry -> entry.market().ticker()))
+                        .thenComparing(Market::ticker))
                 .toList();
     }
 
-    public List<ClosenessCentralityEntry> closenessCentralityRanking() {
-        return marketsByTicker.values().stream()
-                .map(market -> new ClosenessCentralityEntry(market, closenessCentralityOf(market.ticker())))
-                .sorted(Comparator
-                        .comparingDouble(ClosenessCentralityEntry::score)
-                        .reversed()
-                        .thenComparing(entry -> entry.market().ticker()))
-                .toList();
-    }
-
+    // uses Dijkstra's algorithm to find the minimum-cost path between two markets,
+    // where each edge cost is defined as 1.0 - similarityScore.
     public List<Market> shortestPathBetween(String startTicker, String endTicker) {
         requiredMarket(startTicker);
         requiredMarket(endTicker);
@@ -217,46 +202,53 @@ public class MarketGraph {
         }
 
         Map<String, String> previousTicker = new HashMap<>();
-        Set<String> visitedTickers = new HashSet<>();
-        Deque<String> queue = new ArrayDeque<>();
+        Map<String, Double> bestCostByTicker = new HashMap<>();
+        PriorityQueue<Map.Entry<String, Double>> frontier = new PriorityQueue<>(Comparator
+                .comparingDouble(Map.Entry<String, Double>::getValue)
+                .thenComparing(Map.Entry<String, Double>::getKey));
 
-        queue.addLast(startTicker);
-        visitedTickers.add(startTicker);
+        bestCostByTicker.put(startTicker, 0.0);
+        frontier.add(new AbstractMap.SimpleEntry<>(startTicker, 0.0));
 
-        while (!queue.isEmpty()) {
-            String currentTicker = queue.removeFirst();
+        while (!frontier.isEmpty()) {
+            Map.Entry<String, Double> currentState = frontier.remove();
+            String currentTicker = currentState.getKey();
+            double currentCost = currentState.getValue();
 
-            for (String neighborTicker : neighborTickersInTraversalOrder(currentTicker)) {
-                if (!visitedTickers.add(neighborTicker)) {
+            if (currentCost > bestCostByTicker.getOrDefault(currentTicker, Double.POSITIVE_INFINITY)) {
+                continue;
+            }
+
+            if (currentTicker.equals(endTicker)) {
+                return reconstructPath(startTicker, endTicker, previousTicker);
+            }
+
+            for (MarketEdge edge : neighborsOf(currentTicker)) {
+                String neighborTicker = otherEndpoint(currentTicker, edge);
+                double candidateCost = currentCost + edgeCost(edge);
+
+                // relaxation step of Dijkstra!
+                if (candidateCost >= bestCostByTicker.getOrDefault(neighborTicker, Double.POSITIVE_INFINITY)) {
                     continue;
                 }
 
                 previousTicker.put(neighborTicker, currentTicker);
-                if (neighborTicker.equals(endTicker)) {
-                    return reconstructPath(startTicker, endTicker, previousTicker);
-                }
-                queue.addLast(neighborTicker);
+                bestCostByTicker.put(neighborTicker, candidateCost);
+                frontier.add(new AbstractMap.SimpleEntry<>(neighborTicker, candidateCost));
             }
         }
 
         return List.of();
     }
 
+    // small helper for App.java printing
     public int marketCount() {
         return marketsByTicker.size();
     }
 
+    // small helper for App.java printing
     public int edgeCount() {
         return edges.size();
-    }
-
-    public boolean hasEdge(String firstTicker, String secondTicker) {
-        return neighborsOf(firstTicker).stream()
-                .anyMatch(edge -> otherEndpoint(firstTicker, edge).equals(secondTicker));
-    }
-
-    public int degreeOf(String ticker) {
-        return neighborsOf(ticker).size();
     }
 
     public String otherEndpoint(String ticker, MarketEdge edge) {
@@ -269,6 +261,7 @@ public class MarketGraph {
         throw new IllegalArgumentException("Ticker " + ticker + " is not part of the provided edge");
     }
 
+    // Helper function that returns a list of neighbor tickers in order of decreasing similarity from a particular ticker
     private List<String> neighborTickersInTraversalOrder(String ticker) {
         List<String> neighborTickers = new ArrayList<>();
         for (MarketEdge edge : neighborsOf(ticker)) {
@@ -277,48 +270,12 @@ public class MarketGraph {
         return neighborTickers;
     }
 
-    private double closenessCentralityOf(String startTicker) {
-        Map<String, Integer> distances = shortestPathDistancesFrom(startTicker);
-        if (distances.size() <= 1) {
-            return 0.0;
-        }
-
-        int totalDistance = distances.values().stream()
-                .filter(distance -> distance > 0)
-                .mapToInt(Integer::intValue)
-                .sum();
-        if (totalDistance == 0) {
-            return 0.0;
-        }
-
-        int reachableMarkets = distances.size() - 1;
-        return (double) reachableMarkets / totalDistance;
+    private double edgeCost(MarketEdge edge) {
+        return 1.0 - edge.similarityScore();
     }
 
-    private Map<String, Integer> shortestPathDistancesFrom(String startTicker) {
-        requiredMarket(startTicker);
-
-        Map<String, Integer> distances = new HashMap<>();
-        Deque<String> queue = new ArrayDeque<>();
-        distances.put(startTicker, 0);
-        queue.addLast(startTicker);
-
-        while (!queue.isEmpty()) {
-            String currentTicker = queue.removeFirst();
-            int currentDistance = distances.get(currentTicker);
-
-            for (String neighborTicker : neighborTickersInTraversalOrder(currentTicker)) {
-                if (distances.containsKey(neighborTicker)) {
-                    continue;
-                }
-                distances.put(neighborTicker, currentDistance + 1);
-                queue.addLast(neighborTicker);
-            }
-        }
-
-        return distances;
-    }
-
+    // Dijkstra's helper that follows pointers backwards from endTicker to startTicker to reconstruct the shortest
+    // path from start to end after execution
     private List<Market> reconstructPath(String startTicker, String endTicker, Map<String, String> previousTicker) {
         Deque<Market> path = new ArrayDeque<>();
         String currentTicker = endTicker;
@@ -334,6 +291,7 @@ public class MarketGraph {
         return List.of();
     }
 
+
     private Market requiredMarket(String ticker) {
         return market(ticker)
                 .orElseThrow(() -> new IllegalStateException("Missing market for ticker: " + ticker));
@@ -345,6 +303,8 @@ public class MarketGraph {
         return new Neighbor(neighborMarket, edge.similarityScore());
     }
 
+    // helper record for nearest-neighbor results: pairs a neighboring market
+    // with the similarity score of the edge connecting it to the source market.
     public record Neighbor(Market market, double similarityScore) {
         public Neighbor {
             if (market == null) {
@@ -352,28 +312,6 @@ public class MarketGraph {
             }
             if (similarityScore < 0.0 || similarityScore > 1.0) {
                 throw new IllegalArgumentException("similarityScore must be between 0.0 and 1.0");
-            }
-        }
-    }
-
-    public record DegreeRankingEntry(Market market, int degree) {
-        public DegreeRankingEntry {
-            if (market == null) {
-                throw new IllegalArgumentException("market must not be null");
-            }
-            if (degree < 0) {
-                throw new IllegalArgumentException("degree must not be negative");
-            }
-        }
-    }
-
-    public record ClosenessCentralityEntry(Market market, double score) {
-        public ClosenessCentralityEntry {
-            if (market == null) {
-                throw new IllegalArgumentException("market must not be null");
-            }
-            if (score < 0.0) {
-                throw new IllegalArgumentException("score must not be negative");
             }
         }
     }

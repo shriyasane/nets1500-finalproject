@@ -36,12 +36,11 @@ public final class App {
                     "Fetched %d markets and built a graph with %d edges.%n",
                     graph.marketCount(),
                     graph.edgeCount());
-            printNearestNeighborDemo(graph, markets.get(0).ticker(), 3);
+            List<List<Market>> components = graph.connectedComponents();
             printTraversalDemo(graph, markets.get(0).ticker());
-            printConnectedComponents(graph);
+            printConnectedComponents(components);
             printDegreeRanking(graph);
-            printClosenessCentrality(graph);
-            printPathFindingDemo(graph, markets.get(0).ticker(), markets.get(markets.size() - 1).ticker());
+            printPathFindingDemo(graph, pickPathDemoComponent(components));
             printNeighborPreview(graph);
         } catch (IOException e) {
             System.err.println("Failed to fetch Kalshi markets: " + e.getMessage());
@@ -51,46 +50,29 @@ public final class App {
         }
     }
 
-    private static void printNearestNeighborDemo(MarketGraph graph, String ticker, int limit) {
-        Market market = graph.market(ticker)
-                .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + ticker));
-        System.out.println("Nearest neighbors for:");
-        printMarketDetails(market, "");
-        List<MarketGraph.Neighbor> neighbors = graph.nearestNeighborsOf(ticker, limit);
-        if (neighbors.isEmpty()) {
-            System.out.println("No similar neighbors above threshold.");
-            return;
-        }
-
-        for (MarketGraph.Neighbor neighbor : neighbors) {
-            System.out.println();
-            printMarketDetails(neighbor.market(), "  ");
-            System.out.printf("  score: %.2f%n", neighbor.similarityScore());
-        }
-    }
-
     private static void printTraversalDemo(MarketGraph graph, String ticker) {
         Market startMarket = graph.market(ticker)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + ticker));
 
         System.out.println();
-        System.out.println("Traversal demo from:");
+        System.out.println("DEMO 1: Graph traversal demo start at Market:");
         printMarketDetails(startMarket, "");
+        System.out.println();
 
         List<Market> breadthFirst = graph.breadthFirstTraversal(ticker);
-        System.out.println("BFS order:");
+        System.out.println("DEMO 1A: BFS order:");
         printTraversalOrder(breadthFirst);
 
         List<Market> depthFirst = graph.depthFirstTraversal(ticker);
-        System.out.println("DFS order:");
+        System.out.println("DEMO 1B: DFS order:");
         printTraversalOrder(depthFirst);
+        System.out.println("\n\n");
     }
 
-    private static void printConnectedComponents(MarketGraph graph) {
+    private static void printConnectedComponents(List<List<Market>> components) {
         System.out.println();
-        System.out.println("Connected components:");
+        System.out.println("DEMO 2: Groups of connected components:");
 
-        List<List<Market>> components = graph.connectedComponents();
         for (int i = 0; i < components.size(); i++) {
             List<Market> component = components.get(i);
             System.out.printf("Component %d (%d markets):%n", i + 1, component.size());
@@ -99,42 +81,41 @@ public final class App {
             }
             System.out.println();
         }
+        System.out.println("\n\n");
     }
 
     private static void printDegreeRanking(MarketGraph graph) {
-        System.out.println("Degree ranking:");
+        System.out.println("DEMO 3: Degree ranking (in order of most connected to least connected Markets):");
 
-        List<MarketGraph.DegreeRankingEntry> ranking = graph.degreeRanking();
+        List<Market> ranking = graph.degreeRanking();
         for (int i = 0; i < ranking.size(); i++) {
-            MarketGraph.DegreeRankingEntry entry = ranking.get(i);
+            Market market = ranking.get(i);
             System.out.printf("%d.%n", i + 1);
-            printMarketDetails(entry.market(), "  ");
-            System.out.printf("  degree: %d%n", entry.degree());
+            printMarketDetails(market, "  ");
+            System.out.printf("  degree: %d%n", graph.neighborsOf(market.ticker()).size());
         }
-        System.out.println();
+        System.out.println("\n\n");
     }
 
-    private static void printClosenessCentrality(MarketGraph graph) {
-        System.out.println("Closeness centrality:");
-
-        List<MarketGraph.ClosenessCentralityEntry> ranking = graph.closenessCentralityRanking();
-        for (int i = 0; i < ranking.size(); i++) {
-            MarketGraph.ClosenessCentralityEntry entry = ranking.get(i);
-            System.out.printf("%d.%n", i + 1);
-            printMarketDetails(entry.market(), "  ");
-            System.out.printf("  closeness score: %.3f%n", entry.score());
+    private static void printPathFindingDemo(MarketGraph graph, List<Market> component) {
+        if (component.size() < 2) {
+            System.out.println("Finding shortest weighted path:");
+            System.out.println("No connected component has at least two markets, so no path demo is available.");
+            System.out.println();
+            return;
         }
-        System.out.println();
-    }
 
-    private static void printPathFindingDemo(MarketGraph graph, String startTicker, String endTicker) {
-        System.out.println("Path finding:");
+        String startTicker = component.get(0).ticker();
+        String endTicker = component.get(component.size() - 1).ticker();
+
+        System.out.println("DEMO 4: Finding shortest weighted path:");
         System.out.println("Start market:");
         printMarketDetails(graph.market(startTicker)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + startTicker)), "  ");
         System.out.println("End market:");
         printMarketDetails(graph.market(endTicker)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + endTicker)), "  ");
+        System.out.println();
 
         List<Market> path = graph.shortestPathBetween(startTicker, endTicker);
         if (path.isEmpty()) {
@@ -142,17 +123,23 @@ public final class App {
             System.out.println();
             return;
         }
-
         System.out.println("Shortest path:");
         for (int i = 0; i < path.size(); i++) {
             System.out.printf("%d.%n", i + 1);
             printMarketDetails(path.get(i), "  ");
         }
-        System.out.println();
+        System.out.println("\n\n");
+    }
+
+    private static List<Market> pickPathDemoComponent(List<List<Market>> components) {
+        return components.stream()
+                .filter(component -> component.size() >= 2)
+                .max((left, right) -> Integer.compare(left.size(), right.size()))
+                .orElse(List.of());
     }
 
     private static void printNeighborPreview(MarketGraph graph) {
-        System.out.println("Top neighbors by market:");
+        System.out.println("DEMO 5: Top neighbors for each market:");
         for (Market market : graph.markets()) {
             System.out.println();
             printMarketDetails(market, "");
@@ -171,6 +158,7 @@ public final class App {
                 System.out.printf("     score: %.2f%n", edge.similarityScore());
             }
         }
+        System.out.println("\n\n");
     }
 
     private static void printMarketDetails(Market market, String indent) {
