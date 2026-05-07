@@ -74,21 +74,7 @@ public class MarketGraph {
         }
         return Collections.unmodifiableList(neighbors);
     }
-
-    public List<Neighbor> nearestNeighborsOf(String ticker, int limit) {
-        if (limit <= 0) {
-            throw new IllegalArgumentException("limit must be positive");
-        }
-
-        Market market = market(ticker)
-                .orElseThrow(() -> new IllegalArgumentException("Unknown market ticker: " + ticker));
-
-        return neighborsOf(market.ticker()).stream()
-                .limit(Math.min(limit, neighborsOf(market.ticker()).size()))
-                .map(edge -> toNeighbor(market.ticker(), edge))
-                .toList();
-    }
-
+    
     // Breadth-First Search from a given market. Adds neighboring markets to queue, explores neighbors in FIFO order,
     // and pops off until queue empty
     public List<Market> breadthFirstTraversal(String startTicker) {
