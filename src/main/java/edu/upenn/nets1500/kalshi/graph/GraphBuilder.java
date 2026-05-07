@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+// Builds a MarketGraph by scoring pairwise market similarity and selecting
+// a bounded set of high-similarity edges.
 public class GraphBuilder {
     private static final double DEFAULT_SIMILARITY_THRESHOLD = 0.2;
     private static final int DEFAULT_MAX_NEIGHBORS_PER_MARKET = 3;
@@ -19,10 +21,14 @@ public class GraphBuilder {
     private final double similarityThreshold;
     private final int maxNeighborsPerMarket;
 
+    // Creates a graph builder with default graph-construction settings:
+    // a fixed similarity threshold and a per-market neighbor cap.
     public GraphBuilder(MarketSimilarityService similarityService) {
         this(similarityService, DEFAULT_SIMILARITY_THRESHOLD, DEFAULT_MAX_NEIGHBORS_PER_MARKET);
     }
 
+    // Creates a graph builder with a custom similarity service, edge threshold,
+    // and maximum number of neighbors allowed per market.
     public GraphBuilder(
             MarketSimilarityService similarityService,
             double similarityThreshold,
@@ -38,6 +44,9 @@ public class GraphBuilder {
         this.maxNeighborsPerMarket = maxNeighborsPerMarket;
     }
 
+    // Constructs a graph from the given markets by scoring all candidate pairs,
+    // keeping only edges above a certain threshold, and greedily selecting edges
+    // until each market reaches the configured neighbor limit.
     public MarketGraph buildGraph(Collection<Market> markets) {
         List<Market> marketList = new ArrayList<>(markets);
         Map<String, Integer> degreeByTicker = new LinkedHashMap<>();
@@ -62,14 +71,18 @@ public class GraphBuilder {
         return new MarketGraph(marketList, selectedEdges);
     }
 
+    // Getter that returns the minimum similarity score required for an edge to be considered.
     public double similarityThreshold() {
         return similarityThreshold;
     }
 
+    // returns maximum number of graph neighbors any single market may have
     public int maxNeighborsPerMarket() {
         return maxNeighborsPerMarket;
     }
 
+    // Scores every unique pair of markets, converts qualifying pairs into edges,
+    // and returns them sorted from highest similarity to lowest. Useful for graphing algos
     private List<MarketEdge> scoreCandidateEdges(List<Market> markets) {
         List<MarketEdge> candidates = new ArrayList<>();
 
