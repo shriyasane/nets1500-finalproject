@@ -2,7 +2,7 @@ package edu.upenn.nets1500.kalshi.graph;
 
 import edu.upenn.nets1500.kalshi.model.Market;
 import edu.upenn.nets1500.kalshi.model.MarketEdge;
-import edu.upenn.nets1500.kalshi.similarity.MarketSimilarityService;
+import edu.upenn.nets1500.kalshi.similarity.TokenJaccardMarketSimilarityService;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -17,20 +17,20 @@ public class GraphBuilder {
     private static final double DEFAULT_SIMILARITY_THRESHOLD = 0.2;
     private static final int DEFAULT_MAX_NEIGHBORS_PER_MARKET = 3;
 
-    private final MarketSimilarityService similarityService;
+    private final TokenJaccardMarketSimilarityService similarityService;
     private final double similarityThreshold;
     private final int maxNeighborsPerMarket;
 
     // Creates a graph builder with default graph-construction settings:
     // a fixed similarity threshold and a per-market neighbor cap.
-    public GraphBuilder(MarketSimilarityService similarityService) {
+    public GraphBuilder(TokenJaccardMarketSimilarityService similarityService) {
         this(similarityService, DEFAULT_SIMILARITY_THRESHOLD, DEFAULT_MAX_NEIGHBORS_PER_MARKET);
     }
 
     // Creates a graph builder with a custom similarity service, edge threshold,
     // and maximum number of neighbors allowed per market.
     public GraphBuilder(
-            MarketSimilarityService similarityService,
+            TokenJaccardMarketSimilarityService similarityService,
             double similarityThreshold,
             int maxNeighborsPerMarket) {
         this.similarityService = Objects.requireNonNull(similarityService, "similarityService must not be null");

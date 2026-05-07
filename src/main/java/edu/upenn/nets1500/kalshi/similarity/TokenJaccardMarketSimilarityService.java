@@ -7,7 +7,10 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 
-public class TokenJaccardMarketSimilarityService implements MarketSimilarityService {
+// Scores market similarity using Jaccard overlap on tokenized market text
+// after lowercasing and removing common stopwords.
+public class TokenJaccardMarketSimilarityService {
+    // common low-information words removed before computing token overlap
     private static final Set<String> STOP_WORDS = Set.of(
             "a",
             "an",
@@ -31,7 +34,8 @@ public class TokenJaccardMarketSimilarityService implements MarketSimilarityServ
             "will",
             "with");
 
-    @Override
+    // Computes Jaccard similarity between the keyword sets of two markets.
+    // A score of 1.0 means identical token sets; 0.0 means no overlap.
     public double score(Market first, Market second) {
         Objects.requireNonNull(first, "first market must not be null");
         Objects.requireNonNull(second, "second market must not be null");
@@ -63,6 +67,8 @@ public class TokenJaccardMarketSimilarityService implements MarketSimilarityServ
         return tokenize(market.similarityText());
     }
 
+    // Tokenizes raw text into a keyword set by lowercasing,
+    // splitting on non-alphanumeric characters, and removing stopwords (defined above)
     private Set<String> tokenize(String text) {
         if (text == null || text.isBlank()) {
             return Set.of();
