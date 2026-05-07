@@ -11,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+// At a high level, this file builds the URL for the Kalshi /markets endpoint, sends the HTTP request, and returns
+// the raw JSON response body as a String
 public class HttpKalshiApiClient implements KalshiApiClient {
     private static final int MAX_RATE_LIMIT_RETRIES = 3;
     private static final long DEFAULT_RETRY_DELAY_MILLIS = 750L;
@@ -23,6 +25,7 @@ public class HttpKalshiApiClient implements KalshiApiClient {
         this.config = config;
     }
 
+    // Sends a GET request to Kalshi's /markets endpoint and returns the raw JSON response body
     @Override
     public String getMarkets(int limit) throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder(buildMarketsUri(limit, null, null))
@@ -53,6 +56,7 @@ public class HttpKalshiApiClient implements KalshiApiClient {
         return sendRequest(request);
     }
 
+    // Builds the /markets request URI and clamps the requested limit to the configured page size.
     private URI buildMarketsUri(int limit, String seriesTicker, String status) {
         String sanitizedBaseUrl = config.baseUrl().endsWith("/")
                 ? config.baseUrl().substring(0, config.baseUrl().length() - 1)

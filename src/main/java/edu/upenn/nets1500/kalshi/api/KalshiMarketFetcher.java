@@ -1,5 +1,4 @@
 package edu.upenn.nets1500.kalshi.api;
-
 import edu.upenn.nets1500.kalshi.model.Market;
 import edu.upenn.nets1500.kalshi.model.MarketStatus;
 import java.io.IOException;
@@ -14,8 +13,11 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+// At a high level, API response parsing + market selection layer
 public class KalshiMarketFetcher {
     private static final int DEFAULT_CATEGORY_COUNT = 5;
+    // used so that the diversified market selection isn’t random and we get a good selection of multiple categories
+    // of markets
     private static final List<String> PREFERRED_CATEGORY_ORDER = List.of(
             "Sports",
             "Politics",
@@ -33,15 +35,14 @@ public class KalshiMarketFetcher {
         this.apiClient = apiClient;
     }
 
-    public List<Market> fetchMarkets() throws IOException, InterruptedException {
-        return fetchMarkets(100);
-    }
-
+    // gets the raw JSON body and passes that response to parseMarkets()
     public List<Market> fetchMarkets(int limit) throws IOException, InterruptedException {
         String responseBody = apiClient.getMarkets(limit);
         return parseMarkets(responseBody);
     }
 
+    // fetches series metadata, parses that series response into a SeriesSummary object, grpups series by category,
+    // chooses 5 categories and fetches open markets from representative series in each category
     public List<Market> fetchDiversifiedMarkets(int limit) throws IOException, InterruptedException {
         int sanitizedLimit = Math.max(1, limit);
         List<SeriesSummary> allSeries;
@@ -97,6 +98,7 @@ public class KalshiMarketFetcher {
         return diversifiedMarkets;
     }
 
+    // extracts top-level markets array from the response, splits into individual JSON object strings, and parses each object into a Market
     List<Market> parseMarkets(String responseBody) {
         String marketsArray = extractTopLevelArray(responseBody, "markets");
         List<String> marketObjects = splitTopLevelObjects(marketsArray);
@@ -109,6 +111,7 @@ public class KalshiMarketFetcher {
         return markets;
     }
 
+    // creates SeriesSummary objects with ticker and category to support diversified fetching
     List<SeriesSummary> parseSeries(String responseBody) {
         String seriesArray = extractTopLevelArray(responseBody, "series");
         List<String> seriesObjects = splitTopLevelObjects(seriesArray);
@@ -143,6 +146,7 @@ public class KalshiMarketFetcher {
                 parseDouble(extractString(marketJson, "last_price_dollars")));
     }
 
+    // takes all parsed series and builds a map of category --> list of series in that category
     private Map<String, List<SeriesSummary>> groupSeriesByCategory(List<SeriesSummary> series) {
         Map<String, List<SeriesSummary>> grouped = new LinkedHashMap<>();
         for (SeriesSummary summary : series) {
@@ -151,6 +155,7 @@ public class KalshiMarketFetcher {
         return grouped;
     }
 
+    // starts with preferred category order (defined at top) and appends any extra categories afterwards in alphabetical order
     private List<String> orderedCategories(Set<String> categories) {
         List<String> ordered = new ArrayList<>();
         for (String preferredCategory : PREFERRED_CATEGORY_ORDER) {
@@ -184,6 +189,8 @@ public class KalshiMarketFetcher {
         return added;
     }
 
+    // Custom JSON Parsing Helpers
+    // finds top-level array like "markets" or "series", and returns contents inside the matching top-level array
     private String extractTopLevelArray(String responseBody, String fieldName) {
         String json = responseBody == null ? "" : responseBody.trim();
         int keyIndex = json.indexOf("\"" + fieldName + "\"");
@@ -221,6 +228,7 @@ public class KalshiMarketFetcher {
         throw new IllegalArgumentException("Response did not contain a closed " + fieldName + " array");
     }
 
+    // given the contents of an array, splits it into top-level JSON object substrings
     private List<String> splitTopLevelObjects(String arrayJson) {
         List<String> objects = new ArrayList<>();
         int objectStart = -1;
@@ -254,6 +262,7 @@ public class KalshiMarketFetcher {
         return objects;
     }
 
+    // regex-extracts a string field or NULL from one objects
     private String extractString(String json, String fieldName) {
         Pattern fieldPattern = Pattern.compile(String.format(STRING_FIELD_TEMPLATE.pattern(), Pattern.quote(fieldName)));
         Matcher matcher = fieldPattern.matcher(json);
@@ -276,6 +285,7 @@ public class KalshiMarketFetcher {
         return value == null ? null : Double.parseDouble(value);
     }
 
+    // helper for detecting whether a quote is escaped
     private boolean isEscaped(String text, int index) {
         int backslashCount = 0;
         for (int i = index - 1; i >= 0 && text.charAt(i) == '\\'; i--) {
@@ -284,6 +294,7 @@ public class KalshiMarketFetcher {
         return backslashCount % 2 == 1;
     }
 
+    // used to determine whether to fall back from diversified fetching to plain! (error case)
     private boolean isRateLimitError(IOException exception) {
         return exception.getMessage() != null && exception.getMessage().contains("429");
     }
